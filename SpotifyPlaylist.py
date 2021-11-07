@@ -23,9 +23,22 @@ class CreatePlaylist:
     def get_youtube_playlist(self):
         pass
     
-    #Step 4. Create a new playlist or obtain an existing playlist
+    #Step 4. Obtain an existing playlist (Perhaps redundant)
     def get_spotify_playlist(self):
-        pass
+        #Send HTTP Get query using requets library
+        query = "https://api.spotify.com/v1/playlists/{}".format(
+            playlist_id
+        )
+        response = requests.get(
+            query,
+            headers = {
+                "Content Type": "application/json",
+                "Authorization": "Bearer {}".format(spotify_token)
+            }
+        )
+        response_json = response.json()
+        return response_json["id"]
+
 
 
     #Step 4. Create a new playlist 
@@ -61,7 +74,6 @@ class CreatePlaylist:
         )
         response = requests.get(
             query,
-            data = request_body,
             headers = {
                 "Content Type": "application/json",
                 "Authorization": "Bearer {}".format(spotify_token)
