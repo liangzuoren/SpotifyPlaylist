@@ -11,6 +11,7 @@ import os
 import base64
 from tokens import clientId
 from tokens import clientSecret
+from tokens import spotify_user_id
 from tokens import API_KEY
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
@@ -22,6 +23,7 @@ from pick import pick
 class CreatePlaylist:
 
     def __init__(self):
+        self.user_id = spotify_user_id
         self.song_info = {}
         self.key = API_KEY
 
@@ -107,6 +109,7 @@ class CreatePlaylist:
             }
         )
         response_json = response.json()
+        print(response_json)
 
         #Get playlist ID that was created
         return response_json["id"]
@@ -133,10 +136,6 @@ class CreatePlaylist:
                 "Authorization": "Bearer {}".format(token)
             }
         )
-
-        #Error message for troubleshooting
-        if response.status_code != 201:
-            print('Error: Request returned status code {}. Returned: {}'.format(response.status_code, response.text))
 
         response_json = response.json()
         #Parse out the songs from the JSON response
