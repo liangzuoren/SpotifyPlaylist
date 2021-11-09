@@ -8,17 +8,20 @@ Step 4. Add song into Spotify
 import json
 import requests
 import os
+import base64
+from tokens import clientId
+from tokens import clientSecret
+from tokens import API_KEY
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
 import googleapiclient.errors
 import youtube_dl
+from urllib.parse import quote
 from pick import pick
 
 class CreatePlaylist:
 
     def __init__(self):
-        self.user_id = spotify_user_id
-        self.spotify_token = spotify_token
         self.song_info = {}
         self.key = API_KEY
 
@@ -39,19 +42,19 @@ class CreatePlaylist:
         credentials = flow.run_console()
         youtube = googleapiclient.discovery.build(api_service_name, api_version, credentials=credentials)
 
-        request = youtube.playlists().list(
+        request = youtube.playlistItems().list(
             part = "id,snippet,contentDetails",
-            id = playlist_id
+            playlistId = playlist_id
         )
         response = request.execute()
 
         #Grab title and url
         for item in response["items"]:
             title = item["snippet"]["title"]
-            url = "https://www.youtube.com/watch?v={}".format(item["id"])
+            url = "https://www.youtube.com/watch?v={}".format(item['contentDetails']["videoId"])
 
             #Use youtube_dl to get song name and artist name
-            info = youtube_dl.YoutubeDL.extract_info(url,download=False)
+            info = youtube_dl.YoutubeDL({}).extract_info(url,download=False)
 
             track = info["track"]
             artist = info["artist"]
@@ -61,22 +64,23 @@ class CreatePlaylist:
                 "track":title,
                 "artist":artist,
                 "spotify_uri":self.get_spotify_uri(track,artist)
-            }
+            }        
 
         return response
     
     
     #Step 2. Obtain an existing playlist (Perhaps redundant)
     def get_spotify_playlist(self,playlist_id):
-        #Send HTTP Get query using requets library
+        token = self.get_token()
+        #Send HTTP Get query using requests library
         query = "https://api.spotify.com/v1/playlists/{}".format(
             playlist_id
         )
         response = requests.get(
             query,
             headers = {
-                "Content Type": "application/json",
-                "Authorization": "Bearer {}".format(self.spotify_token)
+                "Content-Type": "application/json",
+                "Authorization": "Bearer {}".format(token)
             }
         )
         response_json = response.json()
@@ -84,6 +88,8 @@ class CreatePlaylist:
 
     #Step 2. Create a new playlist 
     def create_spotify_playlist(self):
+        token = self.get_token()
+
         #Format Playlist information based on Spotify Playlist requirements
         request_body = json.dumps({
             "name": "Youtube Playlist Video",
@@ -96,8 +102,8 @@ class CreatePlaylist:
             query,
             data = request_body,
             headers = {
-                "Content Type": "application/json",
-                "Authorization": "Bearer {}".format(self.spotify_token)
+                "Content-Type": "application/json",
+                "Authorization": "Bearer {}".format(token)
             }
         )
         response_json = response.json()
@@ -108,28 +114,41 @@ class CreatePlaylist:
 
     #Step 3. Search for songs on Spotify
     def get_spotify_uri(self,track,artist):
+        token = self.get_token()
+
+        #Convert track and artist to url-friendly versions with encoding
+        track = quote(track)
+        artist = quote(track)
+
         #Send HTTP Get query using requests library
-        query = "https://api.spotify.com/v1/search?q=track%3A{}%2Bartist%3A{}&type=track%2Cartist&limit=10&offset=5".format(
+        query = "https://api.spotify.com/v1/search?q={}%2C{}&type=track%2Cartist&limit=10&offset=5".format(
             track,
             artist
         )
+
         response = requests.get(
             query,
             headers = {
-                "Content Type": "application/json",
-                "Authorization": "Bearer {}".format(self.spotify_token)
+                "Content-Type": "application/json",
+                "Authorization": "Bearer {}".format(token)
             }
         )
+
+        #Error message for troubleshooting
+        if response.status_code != 201:
+            print('Error: Request returned status code {}. Returned: {}'.format(response.status_code, response.text))
+
         response_json = response.json()
         #Parse out the songs from the JSON response
         tracks = response_json["tracks"]["items"]
         #Grab first song uri that the query appears (assuming it is the correct one)
-        track_uri = songs[0]['uri']
+        track_uri = tracks[0]["uri"]
 
         return track_uri
 
     #Step 4. Add song into Spotify playlist
     def add_songs_to_spotify_playlist(self,playlist_id):
+        token = self.get_token()
         uris = []
         for song,info in self.song_info.items():
             uris.append(info["spotify_uri"])
@@ -141,18 +160,37 @@ class CreatePlaylist:
             query,
             data = request_body,
             headers = {
-                "Content Type": "application/json",
-                "Authorization": "Bearer {}".format(self.spotify_token)
+                "Content-Type": "application/json",
+                "Authorization": "Bearer {}".format(token)
             }
         )
         response_json = response.json()
 
         return response_json
 
+    #Code to obtain a token for Spotify OAuth requests
+    def get_token(self):
+        token_url = 'https://accounts.spotify.com/api/token'
+        headers = {}
+        data = {}
+
+        message = f"{clientId}:{clientSecret}"
+        messageBytes = message.encode('ascii')
+        base64Bytes = base64.b64encode(messageBytes)
+        base64Message = base64Bytes.decode('ascii')
+
+        headers['Authorization'] = f"Basic {base64Message}"
+        data['grant_type'] = "client_credentials"
+
+        r = requests.post(token_url, headers=headers, data=data)
+        token = r.json()['access_token']
+        return token
+
     #Main function to run program
-    def main():
+    def main(self):
         youtube_playlist_id = input("Enter Your Youtube Playlist ID: ")
-        
+        self.get_youtube_playlist(youtube_playlist_id)
+
         title = "Add to existing playlist or Create new playlist?"
         options = ['Add to existing playlist','Create new playlist']
         option,index = pick(options,title)
@@ -163,13 +201,11 @@ class CreatePlaylist:
 
         #Option 2: Create new playlist
         if index == 1:
-            spotify_playlist_id = create_spotify_playlist()
+            spotify_playlist_id = self.create_spotify_playlist()
 
-        get_youtube_playlist(youtube_playlist_id)
-        add_songs_to_spotify_playlist(spotify_playlist_id)
+        self.add_songs_to_spotify_playlist(spotify_playlist_id)
 
         output = "Successfully added songs to Spotify playlist {} from Youtube playlist {}".format(spotify_playlist_id,youtube_playlist_id)
         print(output)
         
-if __name__ == "__main__":
-    main()
+CreatePlaylist().main()
